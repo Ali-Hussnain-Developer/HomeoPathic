@@ -6,7 +6,6 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import com.example.todolist.model.Task
-
 @Dao
 interface TaskDao {
 
@@ -21,5 +20,11 @@ interface TaskDao {
 
     @Update
     suspend fun updateTask(task: Task)
+
+    @Insert
+    suspend fun insertAll(tasks: List<Task>)
+
+    @Query("SELECT COUNT(*) FROM tasks")
+    suspend fun getTaskCount(): Int
 }
 

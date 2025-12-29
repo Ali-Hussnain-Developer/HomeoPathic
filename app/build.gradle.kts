@@ -67,6 +67,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.kotlinx.metadata.jvm)
     implementation(libs.richeditor.android)
-
+    //Gson
+    implementation("com.google.code.gson:gson:2.10.1")
 
 }
