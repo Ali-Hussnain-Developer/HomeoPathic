@@ -82,6 +82,9 @@ class TaskListFragment : Fragment() {
         binding.btnAdd.setOnClickListener {
             showAddTaskDialog()
         }
+        binding.btnGoogleDrive.setOnClickListener {
+
+        }
     }
 
     private fun initialization() {

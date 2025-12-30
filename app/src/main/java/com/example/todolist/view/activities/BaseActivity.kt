@@ -39,7 +39,7 @@ class BaseActivity : AppCompatActivity() {
         ViewCompat.setOnApplyWindowInsetsListener(decorView) { view, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             view.setBackgroundColor(statusBarColor)
-            view.setPadding(0, systemBars.top, 0, 0)
+            view.setPadding(0, systemBars.top, 0,systemBars.bottom )
             WindowInsetsCompat.CONSUMED
         }
     }
