@@ -18,6 +18,7 @@ import com.example.todolist.data.TaskDao
 import com.example.todolist.data.TaskDatabase
 import com.example.todolist.databinding.FragmentTaskListBinding
 import com.example.todolist.model.Task
+import com.example.todolist.view.activities.BaseActivity
 import kotlinx.coroutines.launch
 
 class TaskListFragment : Fragment() {
@@ -26,6 +27,7 @@ class TaskListFragment : Fragment() {
     private lateinit var taskAdapter: TaskAdapter
     private lateinit var taskDao: TaskDao
     private var fullTaskList = listOf<Task>()
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -73,24 +75,27 @@ class TaskListFragment : Fragment() {
                         it.title.contains(searchText, ignoreCase = true)
                     }.sortedBy { it.title.lowercase() }
 
-                    taskAdapter.submitList(filteredListFullTaskList) // Reset to full list
+                    taskAdapter.submitList(filteredListFullTaskList)
                 }
             }
 
             override fun afterTextChanged(s: Editable?) {}
         })
+
         binding.btnAdd.setOnClickListener {
             showAddTaskDialog()
         }
-        binding.btnGoogleDrive.setOnClickListener {
 
+        // Export button - Call activity method
+        binding.btnGoogleDrive.setOnClickListener {
+            (activity as? BaseActivity)?.handleExportToGoogleDrive()
         }
     }
 
     private fun initialization() {
         taskDao = TaskDatabase.getDatabase(requireContext()).taskDao()
+
         taskAdapter = TaskAdapter { task ->
-            // Navigate to detail fragment
             val detailFragment = TaskDetailFragment.newInstance(task.id)
             parentFragmentManager.beginTransaction()
                 .replace(R.id.fragment_container, detailFragment)
