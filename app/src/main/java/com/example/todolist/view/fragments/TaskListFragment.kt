@@ -47,8 +47,16 @@ class TaskListFragment : Fragment() {
     private fun setUpObserver() {
         taskDao.getAllTasks().observe(viewLifecycleOwner) { tasks ->
             fullTaskList = tasks
-            val sortedTasks = tasks.sortedBy { it.title.lowercase() }
-            taskAdapter.submitList(sortedTasks)
+            val searchText = binding.edtSearch.text.toString().trim()
+            if (searchText.isNotEmpty()) {
+                val filteredList = tasks.filter {
+                    it.title.contains(searchText, ignoreCase = true)
+                }.sortedBy { it.title.lowercase() }
+                taskAdapter.submitList(filteredList)
+            } else {
+                val sortedTasks = tasks.sortedBy { it.title.lowercase() }
+                taskAdapter.submitList(sortedTasks)
+            }
             if (tasks.isEmpty()) {
                 binding.tvNoData.visibility = View.VISIBLE
             } else {

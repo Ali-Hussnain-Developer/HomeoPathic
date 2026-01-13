@@ -232,21 +232,10 @@ class BaseActivity : AppCompatActivity() {
     }
 
     fun handleImportFromGoogleDrive() {
-        // Show dialog to ask user's preference
-        AlertDialog.Builder(this)
-            .setTitle("Import Options")
-            .setMessage("How would you like to import the data?")
-            .setPositiveButton("Replace All Data") { _, _ ->
-                openFilePicker(replaceAll = true)
-            }
-            .setNegativeButton("Append to Existing") { _, _ ->
-                openFilePicker(replaceAll = false)
-            }
-            .setNeutralButton("Cancel", null)
-            .show()
+        openFilePicker()
     }
 
-    private fun openFilePicker(replaceAll: Boolean) {
+    private fun openFilePicker() {
         try {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
@@ -260,32 +249,23 @@ class BaseActivity : AppCompatActivity() {
                 putExtra(Intent.EXTRA_LOCAL_ONLY, false)
             }
 
-            // Store the replaceAll preference for use in onActivityResult
-            getSharedPreferences("import_prefs", MODE_PRIVATE)
-                .edit()
-                .putBoolean("replace_all", replaceAll)
-                .apply()
-
             startActivityForResult(intent, REQUEST_CODE_PICK_FILE)
         } catch (e: Exception) {
             Log.e("BaseActivity", "Failed to open file picker", e)
             Toast.makeText(this, "Failed to open file picker: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
-
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
         if (requestCode == REQUEST_CODE_PICK_FILE && resultCode == RESULT_OK) {
             data?.data?.let { uri ->
-                val replaceAll = getSharedPreferences("import_prefs", MODE_PRIVATE)
-                    .getBoolean("replace_all", false)
-                importExcelFile(uri, replaceAll)
+                importExcelFile(uri)
             }
         }
     }
 
-    private fun importExcelFile(uri: android.net.Uri, replaceAll: Boolean) {
+    private fun importExcelFile(uri: android.net.Uri) {
         val progressDialog = AlertDialog.Builder(this)
             .setMessage("Importing data...")
             .setCancelable(false)
@@ -308,28 +288,20 @@ class BaseActivity : AppCompatActivity() {
                     return@launch
                 }
 
-                // Import to database
+                // Import to database - Replace all data
                 val db = TaskDatabase.getDatabase(this@BaseActivity)
                 withContext(Dispatchers.IO) {
-                    if (replaceAll) {
-                        // Delete all existing tasks
-                        db.taskDao().deleteAllTasks()
-                    }
+                    // Delete all existing tasks
+                    db.taskDao().deleteAllTasks()
                     // Insert new tasks
                     db.taskDao().insertAll(tasks)
                 }
 
                 progressDialog.dismiss()
 
-                val message = if (replaceAll) {
-                    "Successfully imported ${tasks.size} records. All previous data has been replaced."
-                } else {
-                    "Successfully imported ${tasks.size} records. Data has been appended to existing records."
-                }
-
                 AlertDialog.Builder(this@BaseActivity)
                     .setTitle("Import Successful")
-                    .setMessage(message)
+                    .setMessage("Successfully imported ${tasks.size} records. All previous data has been replaced.")
                     .setPositiveButton("OK", null)
                     .show()
 
