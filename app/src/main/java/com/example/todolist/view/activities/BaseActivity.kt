@@ -25,6 +25,9 @@ import java.io.File
 import java.io.FileOutputStream
 
 class BaseActivity : AppCompatActivity() {
+    companion object {
+        private const val REQUEST_CODE_PICK_FILE = 1001
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -226,5 +229,169 @@ class BaseActivity : AppCompatActivity() {
             Log.e("BaseActivity", "Failed to open Google Drive", e)
             Toast.makeText(this, "Could not open Google Drive", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    fun handleImportFromGoogleDrive() {
+        // Show dialog to ask user's preference
+        AlertDialog.Builder(this)
+            .setTitle("Import Options")
+            .setMessage("How would you like to import the data?")
+            .setPositiveButton("Replace All Data") { _, _ ->
+                openFilePicker(replaceAll = true)
+            }
+            .setNegativeButton("Append to Existing") { _, _ ->
+                openFilePicker(replaceAll = false)
+            }
+            .setNeutralButton("Cancel", null)
+            .show()
+    }
+
+    private fun openFilePicker(replaceAll: Boolean) {
+        try {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "application/vnd.ms-excel"
+                ))
+                // Try to open Google Drive specifically
+                putExtra("android.content.extra.SHOW_ADVANCED", true)
+                putExtra(Intent.EXTRA_LOCAL_ONLY, false)
+            }
+
+            // Store the replaceAll preference for use in onActivityResult
+            getSharedPreferences("import_prefs", MODE_PRIVATE)
+                .edit()
+                .putBoolean("replace_all", replaceAll)
+                .apply()
+
+            startActivityForResult(intent, REQUEST_CODE_PICK_FILE)
+        } catch (e: Exception) {
+            Log.e("BaseActivity", "Failed to open file picker", e)
+            Toast.makeText(this, "Failed to open file picker: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == REQUEST_CODE_PICK_FILE && resultCode == RESULT_OK) {
+            data?.data?.let { uri ->
+                val replaceAll = getSharedPreferences("import_prefs", MODE_PRIVATE)
+                    .getBoolean("replace_all", false)
+                importExcelFile(uri, replaceAll)
+            }
+        }
+    }
+
+    private fun importExcelFile(uri: android.net.Uri, replaceAll: Boolean) {
+        val progressDialog = AlertDialog.Builder(this)
+            .setMessage("Importing data...")
+            .setCancelable(false)
+            .create()
+        progressDialog.show()
+
+        lifecycleScope.launch {
+            try {
+                val tasks = withContext(Dispatchers.IO) {
+                    parseExcelFile(uri)
+                }
+
+                if (tasks.isEmpty()) {
+                    progressDialog.dismiss()
+                    AlertDialog.Builder(this@BaseActivity)
+                        .setTitle("Import Failed")
+                        .setMessage("No valid data found in the Excel file.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                    return@launch
+                }
+
+                // Import to database
+                val db = TaskDatabase.getDatabase(this@BaseActivity)
+                withContext(Dispatchers.IO) {
+                    if (replaceAll) {
+                        // Delete all existing tasks
+                        db.taskDao().deleteAllTasks()
+                    }
+                    // Insert new tasks
+                    db.taskDao().insertAll(tasks)
+                }
+
+                progressDialog.dismiss()
+
+                val message = if (replaceAll) {
+                    "Successfully imported ${tasks.size} records. All previous data has been replaced."
+                } else {
+                    "Successfully imported ${tasks.size} records. Data has been appended to existing records."
+                }
+
+                AlertDialog.Builder(this@BaseActivity)
+                    .setTitle("Import Successful")
+                    .setMessage(message)
+                    .setPositiveButton("OK", null)
+                    .show()
+
+            } catch (e: Exception) {
+                Log.e("BaseActivity", "Import failed", e)
+                progressDialog.dismiss()
+
+                AlertDialog.Builder(this@BaseActivity)
+                    .setTitle("Import Failed")
+                    .setMessage("Error: ${e.message}\n\nPlease make sure the Excel file has the correct format with Title and Description columns.")
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }
+    }
+
+    private fun parseExcelFile(uri: android.net.Uri): List<com.example.todolist.model.Task> {
+        val tasks = mutableListOf<com.example.todolist.model.Task>()
+
+        contentResolver.openInputStream(uri)?.use { inputStream ->
+            val workbook = XSSFWorkbook(inputStream)
+            val sheet = workbook.getSheetAt(0)
+
+            if (sheet.physicalNumberOfRows == 0) {
+                throw Exception("Excel file is empty")
+            }
+
+            // Check if first row has exactly 2 columns
+            val firstRow = sheet.getRow(0)
+            if (firstRow == null || firstRow.physicalNumberOfCells < 2) {
+                throw Exception("Invalid format: Excel file must have at least 2 columns (Title and Description)")
+            }
+
+            // Process all rows as data (including first row)
+            for (rowIndex in 0 until sheet.physicalNumberOfRows) {
+                val row = sheet.getRow(rowIndex) ?: continue
+
+                // Get title from first column
+                val titleCell = row.getCell(0)
+                val title = titleCell?.stringCellValue?.trim() ?: ""
+
+                if (title.isEmpty()) {
+                    continue // Skip rows with empty title
+                }
+
+                // Get description from second column
+                val descCell = row.getCell(1)
+                val description = descCell?.stringCellValue?.trim() ?: ""
+
+                tasks.add(com.example.todolist.model.Task(
+                    title = title,
+                    description = description.ifEmpty { null }
+                ))
+            }
+
+            workbook.close()
+        }
+
+        if (tasks.isEmpty()) {
+            throw Exception("No valid data found in the Excel file")
+        }
+
+        return tasks
     }
 }

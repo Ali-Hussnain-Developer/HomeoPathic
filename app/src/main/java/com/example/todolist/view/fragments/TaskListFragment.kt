@@ -49,7 +49,6 @@ class TaskListFragment : Fragment() {
             fullTaskList = tasks
             val sortedTasks = tasks.sortedBy { it.title.lowercase() }
             taskAdapter.submitList(sortedTasks)
-
             if (tasks.isEmpty()) {
                 binding.tvNoData.visibility = View.VISIBLE
             } else {
@@ -86,9 +85,11 @@ class TaskListFragment : Fragment() {
             showAddTaskDialog()
         }
 
-        // Export button - Call activity method
         binding.btnGoogleDrive.setOnClickListener {
             (activity as? BaseActivity)?.handleExportToGoogleDrive()
+        }
+        binding.btnImport.setOnClickListener {
+            (activity as? BaseActivity)?.handleImportFromGoogleDrive()
         }
     }
 

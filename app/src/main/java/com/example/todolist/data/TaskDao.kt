@@ -28,5 +28,8 @@ interface TaskDao {
     suspend fun getTaskCount(): Int
     @Query("SELECT * FROM tasks ORDER BY id DESC")
     suspend fun getAllTasksSync(): List<Task>
+
+    @Query("DELETE FROM tasks")
+    suspend fun deleteAllTasks()
 }
 

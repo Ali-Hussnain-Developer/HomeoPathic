@@ -18,6 +18,15 @@
                 android:layout_marginHorizontal="5dp"
                 android:src="@drawable/ic_google_drive"
                 app:tint="@color/white"/>
+        <TextView
+            android:id="@+id/btnImport"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+           android:layout_centerInParent="true"
+            android:text="Import"
+            android:textStyle="bold"
+            android:textColor="@color/white"
+            android:textSize="20sp"/>
             <ImageView
                 android:id="@+id/btnAdd"
                 android:layout_width="50dp"
