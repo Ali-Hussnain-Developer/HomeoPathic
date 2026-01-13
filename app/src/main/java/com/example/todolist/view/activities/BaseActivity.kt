@@ -23,15 +23,21 @@ import kotlinx.coroutines.withContext
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
 import java.io.FileOutputStream
+import androidx.drawerlayout.widget.DrawerLayout
+import com.google.android.material.navigation.NavigationView
+import androidx.core.view.GravityCompat
+import com.example.todolist.databinding.ActivityBaseBinding
 
 class BaseActivity : AppCompatActivity() {
+    lateinit var binding: ActivityBaseBinding
     companion object {
         private const val REQUEST_CODE_PICK_FILE = 1001
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_base)
+        binding= ActivityBaseBinding.inflate(layoutInflater)
+        setContentView(binding.root)
         if (Build.VERSION.SDK_INT >= 35) {
             handleEdgeToEdge()
         }
@@ -41,6 +47,36 @@ class BaseActivity : AppCompatActivity() {
             supportFragmentManager.beginTransaction()
                 .replace(R.id.fragment_container, TaskListFragment())
                 .commit()
+        }
+        setupNavigationDrawer()
+    }
+    private fun setupNavigationDrawer() {
+        binding.navigationView.setNavigationItemSelectedListener { menuItem ->
+            when (menuItem.itemId) {
+                R.id.nav_import -> {
+                    handleImportFromGoogleDrive()
+                    binding.drawerLayout.closeDrawer(GravityCompat.START)
+                    true
+                }
+                R.id.nav_export -> {
+                    handleExportToGoogleDrive()
+                    binding.drawerLayout.closeDrawer(GravityCompat.START)
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    fun openDrawer() {
+        binding.drawerLayout.openDrawer(GravityCompat.START)
+    }
+
+    override fun onBackPressed() {
+        if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
+            binding.drawerLayout.closeDrawer(GravityCompat.START)
+        } else {
+            super.onBackPressed()
         }
     }
 
@@ -255,6 +291,8 @@ class BaseActivity : AppCompatActivity() {
             Toast.makeText(this, "Failed to open file picker: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
+
+
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 

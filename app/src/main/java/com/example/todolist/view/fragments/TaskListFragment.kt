@@ -93,11 +93,8 @@ class TaskListFragment : Fragment() {
             showAddTaskDialog()
         }
 
-        binding.btnGoogleDrive.setOnClickListener {
-            (activity as? BaseActivity)?.handleExportToGoogleDrive()
-        }
-        binding.btnImport.setOnClickListener {
-            (activity as? BaseActivity)?.handleImportFromGoogleDrive()
+        binding.ivMenu.setOnClickListener {
+            (activity as? BaseActivity)?.openDrawer()
         }
     }
 
