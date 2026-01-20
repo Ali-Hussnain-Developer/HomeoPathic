@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
@@ -16,31 +17,38 @@ import androidx.lifecycle.lifecycleScope
 import com.example.todolist.R
 import com.example.todolist.data.TaskDatabase
 import com.example.todolist.view.fragments.TaskListFragment
-import com.google.gson.GsonBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
 import java.io.FileOutputStream
-import androidx.drawerlayout.widget.DrawerLayout
-import com.google.android.material.navigation.NavigationView
 import androidx.core.view.GravityCompat
 import com.example.todolist.databinding.ActivityBaseBinding
+import com.example.todolist.model.Task
+import org.apache.poi.ss.usermodel.*
+import java.io.InputStream
+import android.net.Uri
+import org.apache.poi.ss.usermodel.*
 
 class BaseActivity : AppCompatActivity() {
     lateinit var binding: ActivityBaseBinding
+
     companion object {
         private const val REQUEST_CODE_PICK_FILE = 1001
+        private const val MAX_FILE_SIZE_MB = 10
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding= ActivityBaseBinding.inflate(layoutInflater)
+        binding = ActivityBaseBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
         if (Build.VERSION.SDK_INT >= 35) {
             handleEdgeToEdge()
         }
+
         TaskDatabase.getDatabase(applicationContext)
 
         if (savedInstanceState == null) {
@@ -48,8 +56,11 @@ class BaseActivity : AppCompatActivity() {
                 .replace(R.id.fragment_container, TaskListFragment())
                 .commit()
         }
+
         setupNavigationDrawer()
+        setupBackPressHandler()
     }
+
     private fun setupNavigationDrawer() {
         binding.navigationView.setNavigationItemSelectedListener { menuItem ->
             when (menuItem.itemId) {
@@ -68,16 +79,21 @@ class BaseActivity : AppCompatActivity() {
         }
     }
 
-    fun openDrawer() {
-        binding.drawerLayout.openDrawer(GravityCompat.START)
+    private fun setupBackPressHandler() {
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
+                    binding.drawerLayout.closeDrawer(GravityCompat.START)
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
     }
 
-    override fun onBackPressed() {
-        if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
-            binding.drawerLayout.closeDrawer(GravityCompat.START)
-        } else {
-            super.onBackPressed()
-        }
+    fun openDrawer() {
+        binding.drawerLayout.openDrawer(GravityCompat.START)
     }
 
     private fun handleEdgeToEdge() {
@@ -122,17 +138,12 @@ class BaseActivity : AppCompatActivity() {
                 }
 
                 val timestamp = System.currentTimeMillis()
-
-                // Create both files
-                val jsonFile = createJsonFile(tasks, timestamp)
                 val excelFile = createExcelFile(tasks, timestamp)
 
-                Log.d("BaseActivity", "Files created: ${jsonFile.name}, ${excelFile.name}")
+                Log.d("BaseActivity", "File created: ${excelFile.name}")
 
                 progressDialog.dismiss()
-
-                // Share both files
-                shareFiles(listOf(jsonFile, excelFile), tasks.size)
+                shareFiles(listOf(excelFile), tasks.size)
 
             } catch (e: Exception) {
                 Log.e("BaseActivity", "Export failed", e)
@@ -144,22 +155,6 @@ class BaseActivity : AppCompatActivity() {
                     .setPositiveButton("OK", null)
                     .show()
             }
-        }
-    }
-
-    private suspend fun createJsonFile(
-        tasks: List<com.example.todolist.model.Task>,
-        timestamp: Long
-    ): File = withContext(Dispatchers.IO) {
-        data class TaskExport(val title: String, val description: String?)
-
-        val tasksWithoutId = tasks.map { TaskExport(it.title, it.description) }
-        val gson = GsonBuilder().setPrettyPrinting().create()
-        val jsonData = gson.toJson(tasksWithoutId)
-
-        val fileName = "medical_data_backup_$timestamp.json"
-        File(cacheDir, fileName).apply {
-            writeText(jsonData)
         }
     }
 
@@ -187,7 +182,7 @@ class BaseActivity : AppCompatActivity() {
             cellStyle = headerStyle
         }
 
-        // Data rows
+        // Data rows (starting from row 1, after header)
         tasks.forEachIndexed { index, task ->
             val row = sheet.createRow(index + 1)
             row.createCell(0).setCellValue(task.title)
@@ -221,7 +216,7 @@ class BaseActivity : AppCompatActivity() {
                 type = "*/*"
                 putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
                 putExtra(Intent.EXTRA_SUBJECT, "Medical Data Backup")
-                putExtra(Intent.EXTRA_TEXT, "Backup files (JSON + Excel) with $taskCount medical records")
+                putExtra(Intent.EXTRA_TEXT, "Backup files (Excel) with $taskCount medical records")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 setPackage("com.google.android.apps.docs")
             }
@@ -280,7 +275,6 @@ class BaseActivity : AppCompatActivity() {
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     "application/vnd.ms-excel"
                 ))
-                // Try to open Google Drive specifically
                 putExtra("android.content.extra.SHOW_ADVANCED", true)
                 putExtra(Intent.EXTRA_LOCAL_ONLY, false)
             }
@@ -292,17 +286,25 @@ class BaseActivity : AppCompatActivity() {
         }
     }
 
-
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
         if (requestCode == REQUEST_CODE_PICK_FILE && resultCode == RESULT_OK) {
             data?.data?.let { uri ->
+                // Take persistable URI permission for Android 16+
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (e: Exception) {
+                    Log.e("BaseActivity", "Permission grant failed", e)
+                }
+
                 importExcelFile(uri)
             }
         }
     }
-
     private fun importExcelFile(uri: android.net.Uri) {
         val progressDialog = AlertDialog.Builder(this)
             .setMessage("Importing data...")
@@ -312,26 +314,35 @@ class BaseActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             try {
+                // STEP 1: Validate file size BEFORE parsing
+                val fileSize = getFileSize(uri)
+                if (fileSize > MAX_FILE_SIZE_MB * 1024 * 1024) {
+                    progressDialog.dismiss()
+                    showErrorDialog(
+                        "File Too Large",
+                        "The selected file is too large (${fileSize / 1024 / 1024}MB). Please select a file smaller than ${MAX_FILE_SIZE_MB}MB.\n\nEnsure your Excel file only contains Title and Description columns."
+                    )
+                    return@launch
+                }
+
+                // STEP 2: Parse Excel file
                 val tasks = withContext(Dispatchers.IO) {
                     parseExcelFile(uri)
                 }
 
                 if (tasks.isEmpty()) {
                     progressDialog.dismiss()
-                    AlertDialog.Builder(this@BaseActivity)
-                        .setTitle("Import Failed")
-                        .setMessage("No valid data found in the Excel file.")
-                        .setPositiveButton("OK", null)
-                        .show()
+                    showErrorDialog(
+                        "No Valid Data",
+                        "No valid data found in the Excel file.\n\nPlease ensure:\n• Column 1: Title (required)\n• Column 2: Description (optional)\n• File format: .xlsx"
+                    )
                     return@launch
                 }
 
-                // Import to database - Replace all data
+                // STEP 3: Import to database
                 val db = TaskDatabase.getDatabase(this@BaseActivity)
                 withContext(Dispatchers.IO) {
-                    // Delete all existing tasks
                     db.taskDao().deleteAllTasks()
-                    // Insert new tasks
                     db.taskDao().insertAll(tasks)
                 }
 
@@ -343,65 +354,167 @@ class BaseActivity : AppCompatActivity() {
                     .setPositiveButton("OK", null)
                     .show()
 
+            } catch (e: InvalidExcelFormatException) {
+                Log.e("BaseActivity", "Invalid Excel format", e)
+                progressDialog.dismiss()
+                showErrorDialog(
+                    "Invalid Excel Format",
+                    e.message ?: "Invalid Excel file format.\n\nRequired format:\n• Column 1: Title\n• Column 2: Description\n• Only 2 columns allowed"
+                )
+            } catch (e: OutOfMemoryError) {
+                Log.e("BaseActivity", "Out of memory", e)
+                progressDialog.dismiss()
+                showErrorDialog(
+                    "File Too Large",
+                    "The Excel file is too large to import. Please reduce the number of rows or split into smaller files.\n\nRequired format:\n• Column 1: Title\n• Column 2: Description"
+                )
             } catch (e: Exception) {
                 Log.e("BaseActivity", "Import failed", e)
                 progressDialog.dismiss()
-
-                AlertDialog.Builder(this@BaseActivity)
-                    .setTitle("Import Failed")
-                    .setMessage("Error: ${e.message}\n\nPlease make sure the Excel file has the correct format with Title and Description columns.")
-                    .setPositiveButton("OK", null)
-                    .show()
+                showErrorDialog(
+                    "Import Failed",
+                    "Could not import the Excel file.\n\nPlease ensure:\n• File format is .xlsx\n• Column 1: Title (required)\n• Column 2: Description (optional)\n• No extra columns\n\nError: ${e.message}"
+                )
             }
         }
     }
+    private fun getFileSize(uri: android.net.Uri): Long {
+        return try {
+            contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                descriptor.statSize
+            } ?: 0L
+        } catch (e: Exception) {
+            0L
+        }
+    }
+    private fun showErrorDialog(title: String, message: String) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("OK", null)
+            .show()
+    }
+    class InvalidExcelFormatException(message: String) : Exception(message)
+    private fun getCellValueAsString(cell: Cell?): String {
+        if (cell == null) return ""
 
-    private fun parseExcelFile(uri: android.net.Uri): List<com.example.todolist.model.Task> {
-        val tasks = mutableListOf<com.example.todolist.model.Task>()
+        return when (cell.cellType) {
+            CellType.STRING -> cell.stringCellValue ?: ""
+            CellType.NUMERIC -> {
+                if (DateUtil.isCellDateFormatted(cell)) {
+                    cell.dateCellValue.toString()
+                } else {
+                    // Remove .0 from whole numbers
+                    val numValue = cell.numericCellValue
+                    if (numValue == numValue.toLong().toDouble()) {
+                        numValue.toLong().toString()
+                    } else {
+                        numValue.toString()
+                    }
+                }
+            }
+            CellType.BOOLEAN -> cell.booleanCellValue.toString()
+            CellType.FORMULA -> {
+                try {
+                    cell.stringCellValue ?: ""
+                } catch (e: Exception) {
+                    try {
+                        cell.numericCellValue.toString()
+                    } catch (e: Exception) {
+                        ""
+                    }
+                }
+            }
+            CellType.BLANK -> ""
+            CellType._NONE -> ""
+            else -> ""
+        }
+    }
+    private fun parseExcelFile(uri: Uri): List<Task> {
+        val tasks = mutableListOf<Task>()
 
-        contentResolver.openInputStream(uri)?.use { inputStream ->
-            val workbook = XSSFWorkbook(inputStream)
+        try {
+            val inputStream = contentResolver.openInputStream(uri)
+                ?: throw InvalidExcelFormatException("Unable to open file")
+
+            val workbook = WorkbookFactory.create(inputStream)
             val sheet = workbook.getSheetAt(0)
 
-            if (sheet.physicalNumberOfRows == 0) {
-                throw Exception("Excel file is empty")
-            }
-
-            // Check if first row has exactly 2 columns
-            val firstRow = sheet.getRow(0)
-            if (firstRow == null || firstRow.physicalNumberOfCells < 2) {
-                throw Exception("Invalid format: Excel file must have at least 2 columns (Title and Description)")
-            }
-
-            // Process all rows as data (including first row)
+            // Start from row 0 (first row)
             for (rowIndex in 0 until sheet.physicalNumberOfRows) {
                 val row = sheet.getRow(rowIndex) ?: continue
 
-                // Get title from first column
-                val titleCell = row.getCell(0)
-                val title = titleCell?.stringCellValue?.trim() ?: ""
-
-                if (title.isEmpty()) {
-                    continue // Skip rows with empty title
+                // Skip header row if detected
+                if (isHeaderRow(row)) {
+                    Log.d("BaseActivity", "Skipping header row at index $rowIndex")
+                    continue
                 }
 
-                // Get description from second column
-                val descCell = row.getCell(1)
-                val description = descCell?.stringCellValue?.trim() ?: ""
+                // Get all cell values, filtering out empty ones
+                val cellValues = mutableListOf<String>()
 
-                tasks.add(com.example.todolist.model.Task(
-                    title = title,
-                    description = description.ifEmpty { null }
-                ))
+                // Iterate through all cells in the row
+                for (cellIndex in 0 until row.lastCellNum) {
+                    val cell = row.getCell(cellIndex)
+                    val cellValue = getCellValueAsString(cell)
+
+                    // Only add non-empty values
+                    if (cellValue.isNotBlank()) {
+                        cellValues.add(cellValue.trim())
+                    }
+                }
+
+                // Skip completely empty rows
+                if (cellValues.isEmpty()) {
+                    continue
+                }
+
+                // Get title (first column)
+                val title = cellValues.getOrNull(0)?.trim() ?: ""
+
+                // Skip if title is empty
+                if (title.isBlank()) {
+                    continue
+                }
+
+                // Merge all remaining columns into description
+                val description = if (cellValues.size > 1) {
+                    cellValues.subList(1, cellValues.size).joinToString(" | ")
+                } else {
+                    null
+                }
+
+                // Create task matching your data class structure
+                tasks.add(
+                    Task(
+                        title = title,
+                        description = description
+                    )
+                )
             }
 
             workbook.close()
-        }
+            inputStream.close()
 
-        if (tasks.isEmpty()) {
-            throw Exception("No valid data found in the Excel file")
+        } catch (e: InvalidExcelFormatException) {
+            throw e
+        } catch (e: Exception) {
+            throw InvalidExcelFormatException("Error parsing Excel file: ${e.message}")
         }
 
         return tasks
+    }
+    private fun isHeaderRow(row: org.apache.poi.ss.usermodel.Row): Boolean {
+        val firstCell = row.getCell(0)
+        val firstCellValue = getCellValueAsString(firstCell).trim().lowercase()
+
+        // Check if first cell contains common header keywords
+        val isHeader = firstCellValue in listOf("title", "name", "task", "item", "subject", "description", "desc")
+
+        if (isHeader) {
+            Log.d("BaseActivity", "Detected header row with value: $firstCellValue")
+        }
+
+        return isHeader
     }
 }
