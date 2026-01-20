@@ -3,12 +3,10 @@
     <group android:checkableBehavior="single">
         <item
             android:id="@+id/nav_import"
-            android:icon="@android:drawable/stat_sys_download"
             android:title="Import from Google Drive" />
 
         <item
             android:id="@+id/nav_export"
-            android:icon="@android:drawable/stat_sys_upload"
             android:title="Export to Google Drive" />
     </group>
 </menu>
