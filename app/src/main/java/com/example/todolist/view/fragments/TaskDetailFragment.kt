@@ -27,9 +27,8 @@ class TaskDetailFragment : Fragment() {
     private val binding get() = _binding!!
     private lateinit var db: TaskDatabase
     private var taskId: Int = -1
-    private lateinit var task: Task
-    private var isDialogVisible = false
-    lateinit var dialog: Dialog
+    private var task: Task? = null
+    private var dialog: Dialog? = null
 
     companion object {
         private const val ARG_TASK_ID = "task_id"
@@ -67,12 +66,14 @@ class TaskDetailFragment : Fragment() {
 
     private fun setUpListener() {
         binding.ivAdd.setOnClickListener {
-            if (!isDialogVisible) {
+            // Only show dialog if it's not already showing and task is loaded
+            if (dialog?.isShowing != true && task != null) {
                 showAddDescriptionDialog()
-                isDialogVisible = true
             }
         }
         binding.ivBack.setOnClickListener {
+            // Dismiss dialog if showing before going back
+            dialog?.dismiss()
             parentFragmentManager.popBackStack()
         }
     }
@@ -81,78 +82,89 @@ class TaskDetailFragment : Fragment() {
         db = TaskDatabase.getDatabase(requireContext())
         if (taskId != -1) {
             lifecycleScope.launch {
-                task = db.taskDao().getTaskById(taskId)
-                binding.tvTitle.text = task.title
+                try {
+                    task = db.taskDao().getTaskById(taskId)
+                    task?.let { loadedTask ->
+                        binding.tvTitle.text = loadedTask.title
 
-                if (!task.description.isNullOrEmpty()) {
-                    binding.tvDescription.text = Html.fromHtml(task.description, Html.FROM_HTML_MODE_LEGACY)
-                    binding.tvDescription.visibility = View.VISIBLE
-                } else {
-                    binding.tvDescription.visibility = View.GONE
+                        if (!loadedTask.description.isNullOrEmpty()) {
+                            binding.tvDescription.text = Html.fromHtml(loadedTask.description, Html.FROM_HTML_MODE_LEGACY)
+                            binding.tvDescription.visibility = View.VISIBLE
+                        } else {
+                            binding.tvDescription.visibility = View.GONE
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    // Show error or go back
+                    parentFragmentManager.popBackStack()
                 }
             }
         }
     }
 
     private fun showAddDescriptionDialog() {
-        // Create the dialog but don't show it yet
-        dialog = Dialog(requireContext(), R.style.TransparentDialogTheme)
-        dialog.setContentView(R.layout.dialog_add_description)
-        dialog.setCancelable(false)
-        val window = dialog.window
-        window?.let {
-            // Keep your transparent background
-            window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        val currentTask = task ?: return
 
-            val layoutParams = WindowManager.LayoutParams()
-            layoutParams.copyFrom(window.attributes)
+        // Create the dialog
+        dialog = Dialog(requireContext(), R.style.TransparentDialogTheme).apply {
+            setContentView(R.layout.dialog_add_description)
+            setCancelable(false)
 
-            // Keep your original width and height settings
-            layoutParams.width = WindowManager.LayoutParams.MATCH_PARENT
-            layoutParams.height = WindowManager.LayoutParams.MATCH_PARENT
+            window?.let { window ->
+                window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
 
-            // Keep your original padding
-            val horizontalMargin = (10 * resources.displayMetrics.density).toInt()
-            val verticalMargin = (10 * resources.displayMetrics.density).toInt()
-            window.decorView.setPadding(
-                horizontalMargin,
-                verticalMargin,
-                horizontalMargin,
-                verticalMargin
-            )
+                val layoutParams = WindowManager.LayoutParams()
+                layoutParams.copyFrom(window.attributes)
+                layoutParams.width = WindowManager.LayoutParams.MATCH_PARENT
+                layoutParams.height = WindowManager.LayoutParams.MATCH_PARENT
 
-            window.attributes = layoutParams
+                val horizontalMargin = (10 * resources.displayMetrics.density).toInt()
+                val verticalMargin = (10 * resources.displayMetrics.density).toInt()
+                window.decorView.setPadding(
+                    horizontalMargin,
+                    verticalMargin,
+                    horizontalMargin,
+                    verticalMargin
+                )
 
-            // Increase the dim amount to create a stronger blur/dim effect on the background
-            window.setDimAmount(1f) // Adjust this value between 0-1 for desired blur intensity
+                window.attributes = layoutParams
+                window.setDimAmount(1f)
+            }
         }
 
-        val etTitle = dialog.findViewById<EditText>(R.id.edtTitle)
-        val etDescription = dialog.findViewById<RichEditor>(R.id.edtDescription)
-        val btnCancel = dialog.findViewById<Button>(R.id.btnCancel)
-        val btnSave = dialog.findViewById<Button>(R.id.btnSave)
-        binding.ivBack.visibility=View.INVISIBLE
-        binding.ivAdd.visibility=View.INVISIBLE
+        val etTitle = dialog?.findViewById<EditText>(R.id.edtTitle)
+        val etDescription = dialog?.findViewById<RichEditor>(R.id.edtDescription)
+        val btnCancel = dialog?.findViewById<Button>(R.id.btnCancel)
+        val btnSave = dialog?.findViewById<Button>(R.id.btnSave)
+
+        if (etTitle == null || etDescription == null || btnCancel == null || btnSave == null) {
+            dialog?.dismiss()
+            return
+        }
+
+        // Hide back and add buttons while dialog is showing
+        binding.ivBack.visibility = View.INVISIBLE
+        binding.ivAdd.visibility = View.INVISIBLE
 
         // Initialize the RichEditor
         etDescription.setPadding(10, 10, 10, 10)
         etDescription.setPlaceholder("Insert text here...")
 
-        // Important: Handle null description properly with empty string
-        val safeDescription = task.description ?: ""
+        // Handle null description properly with empty string
+        val safeDescription = currentTask.description ?: ""
 
-        // Set text values before showing dialog
-        etTitle.setText(task.title)
+        // Set text values
+        etTitle.setText(currentTask.title)
         etDescription.setHtml(safeDescription)
 
         // Configure rich editor buttons
-        setRichEditorLayout(dialog, etDescription)
+        setRichEditorLayout(dialog!!, etDescription)
 
         btnCancel.setOnClickListener {
-            dialog.dismiss()
-            binding.ivBack.visibility=View.VISIBLE
-            binding.ivAdd.visibility=View.VISIBLE
-            isDialogVisible=false
+            dialog?.dismiss()
+            binding.ivBack.visibility = View.VISIBLE
+            binding.ivAdd.visibility = View.VISIBLE
         }
 
         btnSave.setOnClickListener {
@@ -166,77 +178,95 @@ class TaskDetailFragment : Fragment() {
                 }
 
                 lifecycleScope.launch {
-                    val updatedTask = task.copy(title = newTitle, description = newDesc)
-                    db.taskDao().updateTask(updatedTask)
+                    try {
+                        val updatedTask = currentTask.copy(title = newTitle, description = newDesc)
+                        db.taskDao().updateTask(updatedTask)
 
-                    // Update UI
-                    binding.tvTitle.text = newTitle
-                    if (newDesc.isNotEmpty()) {
-                        binding.tvDescription.text = Html.fromHtml(newDesc, Html.FROM_HTML_MODE_LEGACY)
-                        binding.tvDescription.visibility = View.VISIBLE
-                    } else {
-                        binding.tvDescription.visibility = View.GONE
+                        // Update UI
+                        binding.tvTitle.text = newTitle
+                        if (newDesc.isNullOrEmpty().not()) {
+                            binding.tvDescription.text = Html.fromHtml(newDesc, Html.FROM_HTML_MODE_LEGACY)
+                            binding.tvDescription.visibility = View.VISIBLE
+                        } else {
+                            binding.tvDescription.visibility = View.GONE
+                        }
+
+                        task = updatedTask
+                        dialog?.dismiss()
+                        binding.ivBack.visibility = View.VISIBLE
+                        binding.ivAdd.visibility = View.VISIBLE
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        // Show error message
                     }
-
-                    task = updatedTask
-                    dialog.dismiss()
-                    binding.ivBack.visibility=View.VISIBLE
-                    binding.ivAdd.visibility=View.VISIBLE
-                    isDialogVisible=false
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
         }
 
-        // Now show the dialog after all setup is done
-        dialog.show()
+        // Handle dialog dismissal
+        dialog?.setOnDismissListener {
+            binding.ivBack.visibility = View.VISIBLE
+            binding.ivAdd.visibility = View.VISIBLE
+        }
 
-        // Place cursor at the end of text after dialog is shown
-        etTitle.setSelection(etTitle.text.length)
+        // Show the dialog
+        try {
+            dialog?.show()
+            // Place cursor at the end of text after dialog is shown
+            etTitle.setSelection(etTitle.text?.length ?: 0)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            binding.ivBack.visibility = View.VISIBLE
+            binding.ivAdd.visibility = View.VISIBLE
+        }
     }
 
     private fun setRichEditorLayout(dialog: Dialog, etDescription: RichEditor) {
-        dialog.findViewById<ImageView>(R.id.btnBold).setOnClickListener {
+        dialog.findViewById<ImageView>(R.id.btnBold)?.setOnClickListener {
             etDescription.setBold()
         }
 
-        dialog.findViewById<ImageView>(R.id.btnItalic).setOnClickListener {
+        dialog.findViewById<ImageView>(R.id.btnItalic)?.setOnClickListener {
             etDescription.setItalic()
         }
 
-        dialog.findViewById<ImageView>(R.id.btnUnderline).setOnClickListener {
+        dialog.findViewById<ImageView>(R.id.btnUnderline)?.setOnClickListener {
             etDescription.setUnderline()
         }
 
-        dialog.findViewById<ImageView>(R.id.btnAlignCenter).setOnClickListener {
+        dialog.findViewById<ImageView>(R.id.btnAlignCenter)?.setOnClickListener {
             etDescription.setAlignCenter()
         }
-        dialog.findViewById<ImageView>(R.id.btnAlignRight).setOnClickListener {
+        dialog.findViewById<ImageView>(R.id.btnAlignRight)?.setOnClickListener {
             etDescription.setAlignRight()
         }
-        dialog.findViewById<ImageView>(R.id.btnAlignLeft).setOnClickListener {
+        dialog.findViewById<ImageView>(R.id.btnAlignLeft)?.setOnClickListener {
             etDescription.setAlignLeft()
         }
-        dialog.findViewById<ImageView>(R.id.btnRedo).setOnClickListener {
+        dialog.findViewById<ImageView>(R.id.btnRedo)?.setOnClickListener {
             etDescription.redo()
         }
-        dialog.findViewById<ImageView>(R.id.btnUndo).setOnClickListener {
+        dialog.findViewById<ImageView>(R.id.btnUndo)?.setOnClickListener {
             etDescription.undo()
         }
-        dialog.findViewById<ImageView>(R.id.btnStrikeThrough).setOnClickListener {
+        dialog.findViewById<ImageView>(R.id.btnStrikeThrough)?.setOnClickListener {
             etDescription.setStrikeThrough()
         }
-        dialog.findViewById<ImageView>(R.id.btnBullets).setOnClickListener {
+        dialog.findViewById<ImageView>(R.id.btnBullets)?.setOnClickListener {
             etDescription.setBullets()
         }
-        dialog.findViewById<ImageView>(R.id.btnNumbers).setOnClickListener {
+        dialog.findViewById<ImageView>(R.id.btnNumbers)?.setOnClickListener {
             etDescription.setNumbers()
         }
     }
 
     override fun onDestroyView() {
         super.onDestroyView()
+        // Dismiss dialog if showing
+        dialog?.dismiss()
+        dialog = null
         _binding = null
     }
 }

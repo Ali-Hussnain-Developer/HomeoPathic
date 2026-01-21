@@ -208,7 +208,14 @@ class BaseActivity : AppCompatActivity() {
         tasks.forEachIndexed { index, task ->
             val row = sheet.createRow(index + 1)
             row.createCell(0).setCellValue(task.title)
-            row.createCell(1).setCellValue(task.description ?: "")
+
+            // Convert HTML to plain text for export
+            val plainDescription = if (!task.description.isNullOrEmpty()) {
+                htmlToPlainText(task.description)
+            } else {
+                ""
+            }
+            row.createCell(1).setCellValue(plainDescription)
         }
 
         sheet.setColumnWidth(0, 6000)
@@ -220,6 +227,31 @@ class BaseActivity : AppCompatActivity() {
                 workbook.write(output)
             }
             workbook.close()
+        }
+    }
+
+    /**
+     * Converts HTML text to plain text, removing tags and decoding HTML entities
+     */
+    private fun htmlToPlainText(html: String): String {
+        return try {
+            // Use Android's Html class to convert HTML to plain text
+            val spanned = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                android.text.Html.fromHtml(html, android.text.Html.FROM_HTML_MODE_LEGACY)
+            } else {
+                @Suppress("DEPRECATION")
+                android.text.Html.fromHtml(html)
+            }
+            // Convert to string and clean up extra whitespace
+            spanned.toString()
+                .replace("\u00A0", " ") // Replace non-breaking spaces
+                .replace(Regex("\\s+"), " ") // Replace multiple spaces with single space
+                .trim()
+        } catch (e: Exception) {
+            crashlytics.recordException(e)
+            Log.e(TAG, "HTML conversion failed", e)
+            // Return original text if conversion fails
+            html
         }
     }
 
@@ -259,14 +291,17 @@ class BaseActivity : AppCompatActivity() {
     private fun showOpenDriveOption() {
         android.os.Handler(mainLooper).postDelayed({
             try {
-                AlertDialog.Builder(this)
-                    .setTitle("Files Shared")
-                    .setMessage("Your backup files have been shared to Google Drive.\n\nWould you like to open Google Drive app?")
-                    .setPositiveButton("Open Google Drive") { _, _ ->
-                        openGoogleDrive()
-                    }
-                    .setNegativeButton("Close", null)
-                    .show()
+                // Check if activity is still valid before showing dialog
+                if (!isFinishing && !isDestroyed) {
+                    AlertDialog.Builder(this)
+                        .setTitle("Files Shared")
+                        .setMessage("Your backup files have been shared to Google Drive.\n\nWould you like to open Google Drive app?")
+                        .setPositiveButton("Open Google Drive") { _, _ ->
+                            openGoogleDrive()
+                        }
+                        .setNegativeButton("Close", null)
+                        .show()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Dialog failed", e)
             }
@@ -433,11 +468,14 @@ class BaseActivity : AppCompatActivity() {
 
     private fun showErrorDialog(title: String, message: String) {
         try {
-            AlertDialog.Builder(this)
-                .setTitle(title)
-                .setMessage(message)
-                .setPositiveButton("OK", null)
-                .show()
+            // Check if activity is still valid before showing dialog
+            if (!isFinishing && !isDestroyed) {
+                AlertDialog.Builder(this)
+                    .setTitle(title)
+                    .setMessage(message)
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Error dialog failed", e)
             Toast.makeText(this, "$title: $message", Toast.LENGTH_LONG).show()
