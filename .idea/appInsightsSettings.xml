@@ -22,10 +22,10 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="PLACEHOLDER" />
-                  <option name="mobileSdkAppId" value="" />
-                  <option name="projectId" value="" />
-                  <option name="projectNumber" value="" />
+                  <option name="appId" value="com.example.todolist" />
+                  <option name="mobileSdkAppId" value="1:387473913994:android:0336a95e63edebf73ad573" />
+                  <option name="projectId" value="homeo-pathic" />
+                  <option name="projectNumber" value="387473913994" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />

@@ -189,15 +189,12 @@ class TaskListFragment : Fragment() {
                 }
             }
 
-            binding.ivMenu.setOnClickListener {
-                try {
-                    Log.d(TAG, "Menu button clicked")
-                    crashlytics.log("Menu button clicked")
-                    (activity as? BaseActivity)?.openDrawer()
-                } catch (e: Exception) {
-                    crashlytics.recordException(e)
-                    Log.e(TAG, "CRITICAL: Failed to open drawer", e)
-                }
+            binding.layoutImport.setOnClickListener {
+                (activity as? BaseActivity)?.handleImportFromGoogleDrive()
+            }
+
+            binding.layoutExport.setOnClickListener {
+                (activity as? BaseActivity)?.handleExportToGoogleDrive()
             }
 
             Log.d(TAG, "Listeners setup complete")

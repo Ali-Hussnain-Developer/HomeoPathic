@@ -9,17 +9,55 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@color/orange">
-        <ImageView
-            android:id="@+id/ivMenu"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:src="@drawable/ic_menu"
-            android:padding="12dp"
-            android:clickable="true"
-            android:backgroundTint="@color/white"
-            android:focusable="true"
-            app:tint="@color/white" />
+        <LinearLayout
+    android:id="@+id/layoutImport"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:layout_marginStart="10dp"
+    android:layout_centerVertical="true"
+    android:layout_alignParentStart="true"
+    >
+    <ImageView
+        android:layout_width="20dp"
+        android:layout_height="match_parent"
+        android:src="@android:drawable/stat_sys_download"
+       />
+    <TextView
+        android:id="@+id/tvImport"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@color/white"
+        android:text="Import"
+        android:textStyle="bold"
+        android:gravity="center"
+        />
+</LinearLayout>
+        <LinearLayout
+            android:id="@+id/layoutExport"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_toRightOf="@+id/layoutImport"
+            android:layout_marginStart="10dp"
+            android:layout_centerVertical="true"
+            >
             <ImageView
+                android:layout_width="20dp"
+                android:layout_height="match_parent"
+                android:src="@android:drawable/stat_sys_upload"
+                />
+            <TextView
+                android:id="@+id/tvExport"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="@color/white"
+                android:text="Export"
+                android:gravity="center"
+                android:textStyle="bold"
+                />
+        </LinearLayout>
+        <ImageView
                 android:id="@+id/btnAdd"
                 android:layout_width="50dp"
                 android:layout_height="50dp"
@@ -29,8 +67,8 @@
                 android:src="@android:drawable/ic_input_add"
                 app:tint="@color/white" />
 
-
     </RelativeLayout>
+
     <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

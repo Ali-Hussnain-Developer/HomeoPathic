@@ -5,7 +5,6 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
-import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -25,7 +24,6 @@ import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
 import java.io.FileOutputStream
-import androidx.core.view.GravityCompat
 import com.example.todolist.databinding.ActivityBaseBinding
 import com.example.todolist.model.Task
 import org.apache.poi.ss.usermodel.*
@@ -36,18 +34,17 @@ class BaseActivity : AppCompatActivity() {
     private var _binding: ActivityBaseBinding? = null
     private val binding get() = _binding!!
     private lateinit var crashlytics: FirebaseCrashlytics
-    private var isImporting = false // Prevent multiple imports
+    private var isImporting = false
 
     companion object {
         private const val MAX_FILE_SIZE_MB = 10
         private const val TAG = "BaseActivity"
     }
 
-    // Modern ActivityResultLauncher
     private val filePickerLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
-        Log.d(TAG, "File picker result received: $uri")
+        Log.d(TAG, "File picker result: $uri")
         crashlytics.log("File picker result: $uri")
 
         if (uri != null) {
@@ -56,20 +53,23 @@ class BaseActivity : AppCompatActivity() {
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-                Log.d(TAG, "URI permission granted successfully")
-                crashlytics.log("File picked and permission granted: $uri")
+                Log.d(TAG, "Permission granted")
+                crashlytics.log("File picked: $uri")
                 importExcelFile(uri)
             } catch (e: SecurityException) {
+                isImporting = false
                 crashlytics.recordException(e)
-                Log.e(TAG, "Security exception during permission grant", e)
+                Log.e(TAG, "Security exception", e)
                 Toast.makeText(this, "Cannot access file. Please try again.", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
+                isImporting = false
                 crashlytics.recordException(e)
-                Log.e(TAG, "Exception during file picker result", e)
+                Log.e(TAG, "File picker error", e)
                 Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
             }
         } else {
-            Log.d(TAG, "File picker cancelled by user")
+            isImporting = false
+            Log.d(TAG, "File picker cancelled")
             crashlytics.log("File picker cancelled")
         }
     }
@@ -79,7 +79,6 @@ class BaseActivity : AppCompatActivity() {
         Log.d(TAG, "onCreate started")
 
         try {
-            // Initialize Crashlytics first
             crashlytics = FirebaseCrashlytics.getInstance()
             crashlytics.setCrashlyticsCollectionEnabled(true)
             crashlytics.log("BaseActivity onCreate - Android ${Build.VERSION.SDK_INT}")
@@ -87,120 +86,30 @@ class BaseActivity : AppCompatActivity() {
             _binding = ActivityBaseBinding.inflate(layoutInflater)
             setContentView(binding.root)
 
-            Log.d(TAG, "Layout inflated successfully")
+            Log.d(TAG, "Layout inflated")
 
             if (Build.VERSION.SDK_INT >= 35) {
                 handleEdgeToEdge()
-                crashlytics.log("Android 16 detected")
             }
 
-            // Initialize database
             TaskDatabase.getDatabase(applicationContext)
             Log.d(TAG, "Database initialized")
 
-            // Load fragment only if not already loaded
             if (savedInstanceState == null) {
-                Log.d(TAG, "Loading TaskListFragment")
+                Log.d(TAG, "Loading fragment")
                 supportFragmentManager.beginTransaction()
                     .replace(R.id.fragment_container, TaskListFragment())
                     .commit()
             }
 
-            setupNavigationDrawer()
-            setupBackPressHandler()
-
-            Log.d(TAG, "onCreate completed successfully")
-            crashlytics.log("BaseActivity onCreate completed")
+            Log.d(TAG, "onCreate completed")
+            crashlytics.log("BaseActivity ready")
 
         } catch (e: Exception) {
             crashlytics.recordException(e)
-            Log.e(TAG, "CRITICAL: onCreate failed", e)
-            // Show error and finish activity
-            Toast.makeText(this, "App initialization failed: ${e.message}", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "onCreate failed", e)
+            Toast.makeText(this, "Initialization failed: ${e.message}", Toast.LENGTH_LONG).show()
             finish()
-        }
-    }
-
-    private fun setupNavigationDrawer() {
-        try {
-            Log.d(TAG, "Setting up navigation drawer")
-
-            binding.navigationView.setNavigationItemSelectedListener { menuItem ->
-                Log.d(TAG, "Navigation item clicked: ${menuItem.itemId}")
-                crashlytics.log("Nav item: ${menuItem.itemId}")
-
-                try {
-                    val result = when (menuItem.itemId) {
-                        R.id.nav_import -> {
-                            Log.d(TAG, "Import menu item selected")
-                            crashlytics.log("Import button clicked")
-
-                            // Prevent multiple simultaneous imports
-                            if (isImporting) {
-                                Log.w(TAG, "Import already in progress, ignoring click")
-                                Toast.makeText(this, "Import already in progress", Toast.LENGTH_SHORT).show()
-                                binding.drawerLayout.closeDrawer(GravityCompat.START)
-                                return@setNavigationItemSelectedListener true
-                            }
-
-                            handleImportFromGoogleDrive()
-                            binding.drawerLayout.closeDrawer(GravityCompat.START)
-                            true
-                        }
-                        R.id.nav_export -> {
-                            Log.d(TAG, "Export menu item selected")
-                            crashlytics.log("Export button clicked")
-                            handleExportToGoogleDrive()
-                            binding.drawerLayout.closeDrawer(GravityCompat.START)
-                            true
-                        }
-                        else -> {
-                            Log.w(TAG, "Unknown menu item: ${menuItem.itemId}")
-                            false
-                        }
-                    }
-
-                    Log.d(TAG, "Menu item handled, result: $result")
-                    result
-
-                } catch (e: Exception) {
-                    crashlytics.recordException(e)
-                    Log.e(TAG, "Error handling navigation item", e)
-                    Toast.makeText(this, "Action failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                    binding.drawerLayout.closeDrawer(GravityCompat.START)
-                    false
-                }
-            }
-
-            Log.d(TAG, "Navigation drawer setup complete")
-
-        } catch (e: Exception) {
-            crashlytics.recordException(e)
-            Log.e(TAG, "CRITICAL: Failed to setup navigation drawer", e)
-            Toast.makeText(this, "Navigation setup failed: ${e.message}", Toast.LENGTH_LONG).show()
-        }
-    }
-
-    private fun setupBackPressHandler() {
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                if (binding.drawerLayout.isDrawerOpen(GravityCompat.START)) {
-                    binding.drawerLayout.closeDrawer(GravityCompat.START)
-                } else {
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
-                }
-            }
-        })
-    }
-
-    fun openDrawer() {
-        try {
-            Log.d(TAG, "Opening drawer")
-            binding.drawerLayout.openDrawer(GravityCompat.START)
-        } catch (e: Exception) {
-            crashlytics.recordException(e)
-            Log.e(TAG, "Failed to open drawer", e)
         }
     }
 
@@ -226,7 +135,7 @@ class BaseActivity : AppCompatActivity() {
     }
 
     fun handleExportToGoogleDrive() {
-        crashlytics.log("handleExportToGoogleDrive started")
+        crashlytics.log("Export started")
         Log.d(TAG, "Export requested")
 
         val progressDialog = AlertDialog.Builder(this)
@@ -242,7 +151,7 @@ class BaseActivity : AppCompatActivity() {
                     db.taskDao().getAllTasksSync()
                 }
 
-                Log.d(TAG, "Total tasks: ${tasks.size}")
+                Log.d(TAG, "Tasks count: ${tasks.size}")
                 crashlytics.log("Exporting ${tasks.size} tasks")
 
                 if (tasks.isEmpty()) {
@@ -255,7 +164,7 @@ class BaseActivity : AppCompatActivity() {
                 val excelFile = createExcelFile(tasks, timestamp)
 
                 Log.d(TAG, "File created: ${excelFile.name}")
-                crashlytics.log("Excel file created: ${excelFile.name}")
+                crashlytics.log("Excel created: ${excelFile.name}")
 
                 progressDialog.dismiss()
                 shareFiles(listOf(excelFile), tasks.size)
@@ -342,8 +251,8 @@ class BaseActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             crashlytics.recordException(e)
-            Log.e(TAG, "Failed to share files", e)
-            Toast.makeText(this, "Failed to share files: ${e.message}", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "Share failed", e)
+            Toast.makeText(this, "Failed to share: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -359,7 +268,7 @@ class BaseActivity : AppCompatActivity() {
                     .setNegativeButton("Close", null)
                     .show()
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to show drive option dialog", e)
+                Log.e(TAG, "Dialog failed", e)
             }
         }, 1000)
     }
@@ -375,20 +284,19 @@ class BaseActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             crashlytics.recordException(e)
-            Log.e(TAG, "Failed to open Google Drive", e)
+            Log.e(TAG, "Drive open failed", e)
             Toast.makeText(this, "Could not open Google Drive", Toast.LENGTH_SHORT).show()
         }
     }
 
     fun handleImportFromGoogleDrive() {
-        Log.d(TAG, "handleImportFromGoogleDrive called")
-        crashlytics.log("handleImportFromGoogleDrive called")
+        Log.d(TAG, "Import called")
+        crashlytics.log("Import called")
 
         try {
-            // Check if already importing
             if (isImporting) {
-                Log.w(TAG, "Import already in progress")
-                Toast.makeText(this, "Import already in progress", Toast.LENGTH_SHORT).show()
+                Log.w(TAG, "Already importing")
+                Toast.makeText(this, "Import in progress", Toast.LENGTH_SHORT).show()
                 return
             }
 
@@ -399,35 +307,34 @@ class BaseActivity : AppCompatActivity() {
         } catch (e: Exception) {
             isImporting = false
             crashlytics.recordException(e)
-            Log.e(TAG, "CRITICAL: handleImportFromGoogleDrive failed", e)
+            Log.e(TAG, "Import failed", e)
             Toast.makeText(this, "Failed to open file picker: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun openFilePicker() {
         try {
-            Log.d(TAG, "Launching file picker")
-            crashlytics.log("Launching ActivityResultLauncher")
+            Log.d(TAG, "Launching picker")
+            crashlytics.log("Launching file picker")
 
-            // Launch the modern file picker
             filePickerLauncher.launch(arrayOf(
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 "application/vnd.ms-excel"
             ))
 
-            Log.d(TAG, "File picker launched successfully")
+            Log.d(TAG, "Picker launched")
 
         } catch (e: Exception) {
             isImporting = false
             crashlytics.recordException(e)
-            Log.e(TAG, "CRITICAL: Failed to launch file picker", e)
-            Toast.makeText(this, "Failed to open file picker: ${e.message}", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "Picker launch failed", e)
+            Toast.makeText(this, "Failed to open picker: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
     private fun importExcelFile(uri: Uri) {
-        Log.d(TAG, "importExcelFile called with URI: $uri")
-        crashlytics.log("importExcelFile started for URI: $uri")
+        Log.d(TAG, "Import Excel: $uri")
+        crashlytics.log("Import Excel: $uri")
 
         val progressDialog = AlertDialog.Builder(this)
             .setMessage("Importing data...")
@@ -437,77 +344,77 @@ class BaseActivity : AppCompatActivity() {
         try {
             progressDialog.show()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to show progress dialog", e)
+            Log.e(TAG, "Dialog failed", e)
             crashlytics.recordException(e)
         }
 
         lifecycleScope.launch {
             try {
                 val fileSize = getFileSize(uri)
-                Log.d(TAG, "File size: $fileSize bytes")
-                crashlytics.log("File size: $fileSize bytes")
+                Log.d(TAG, "File size: $fileSize")
+                crashlytics.log("File size: $fileSize")
 
                 if (fileSize > MAX_FILE_SIZE_MB * 1024 * 1024) {
                     progressDialog.dismiss()
                     isImporting = false
                     showErrorDialog(
                         "File Too Large",
-                        "The selected file is too large (${fileSize / 1024 / 1024}MB). Please select a file smaller than ${MAX_FILE_SIZE_MB}MB."
+                        "File is ${fileSize / 1024 / 1024}MB. Max is ${MAX_FILE_SIZE_MB}MB."
                     )
                     return@launch
                 }
 
-                Log.d(TAG, "Starting Excel parsing")
+                Log.d(TAG, "Parsing Excel")
                 val tasks = withContext(Dispatchers.IO) {
                     parseExcelFile(uri)
                 }
 
                 Log.d(TAG, "Parsed ${tasks.size} tasks")
-                crashlytics.log("Parsed ${tasks.size} tasks from Excel")
+                crashlytics.log("Parsed ${tasks.size} tasks")
 
                 if (tasks.isEmpty()) {
                     progressDialog.dismiss()
                     isImporting = false
                     showErrorDialog(
                         "No Valid Data",
-                        "No valid data found in the Excel file."
+                        "No valid data found in Excel file."
                     )
                     return@launch
                 }
 
-                Log.d(TAG, "Inserting tasks into database")
+                Log.d(TAG, "Saving to database")
                 val db = TaskDatabase.getDatabase(this@BaseActivity)
                 withContext(Dispatchers.IO) {
                     db.taskDao().deleteAllTasks()
                     db.taskDao().insertAll(tasks)
                 }
 
-                Log.d(TAG, "Import completed successfully")
-                crashlytics.log("Successfully imported ${tasks.size} tasks")
+                Log.d(TAG, "Import complete")
+                crashlytics.log("Import successful: ${tasks.size} tasks")
                 progressDialog.dismiss()
                 isImporting = false
 
                 AlertDialog.Builder(this@BaseActivity)
                     .setTitle("Import Successful")
-                    .setMessage("Successfully imported ${tasks.size} records. All previous data has been replaced.")
+                    .setMessage("Imported ${tasks.size} records. Previous data replaced.")
                     .setPositiveButton("OK", null)
                     .show()
 
             } catch (e: InvalidExcelFormatException) {
                 crashlytics.recordException(e)
-                Log.e(TAG, "Invalid Excel format", e)
+                Log.e(TAG, "Invalid format", e)
                 progressDialog.dismiss()
                 isImporting = false
-                showErrorDialog("Invalid Excel Format", e.message ?: "Invalid file format")
+                showErrorDialog("Invalid Excel Format", e.message ?: "Invalid format")
             } catch (e: OutOfMemoryError) {
                 crashlytics.recordException(e)
                 Log.e(TAG, "Out of memory", e)
                 progressDialog.dismiss()
                 isImporting = false
-                showErrorDialog("File Too Large", "The Excel file is too large to import.")
+                showErrorDialog("File Too Large", "File is too large to import.")
             } catch (e: Exception) {
                 crashlytics.recordException(e)
-                Log.e(TAG, "Import failed", e)
+                Log.e(TAG, "Import error", e)
                 progressDialog.dismiss()
                 isImporting = false
                 showErrorDialog("Import Failed", "Error: ${e.message}")
@@ -517,12 +424,9 @@ class BaseActivity : AppCompatActivity() {
 
     private fun getFileSize(uri: Uri): Long {
         return try {
-            contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
-                descriptor.statSize
-            } ?: 0L
+            contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
         } catch (e: Exception) {
             crashlytics.recordException(e)
-            Log.e(TAG, "Failed to get file size", e)
             0L
         }
     }
@@ -535,7 +439,7 @@ class BaseActivity : AppCompatActivity() {
                 .setPositiveButton("OK", null)
                 .show()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to show error dialog", e)
+            Log.e(TAG, "Error dialog failed", e)
             Toast.makeText(this, "$title: $message", Toast.LENGTH_LONG).show()
         }
     }
@@ -556,7 +460,7 @@ class BaseActivity : AppCompatActivity() {
                 val row = sheet.getRow(rowIndex) ?: continue
 
                 if (isHeaderRow(row)) {
-                    Log.d(TAG, "Skipping header row at index $rowIndex")
+                    Log.d(TAG, "Skipping header at row $rowIndex")
                     continue
                 }
 
@@ -571,21 +475,14 @@ class BaseActivity : AppCompatActivity() {
                     }
                 }
 
-                if (cellValues.isEmpty()) {
-                    continue
-                }
+                if (cellValues.isEmpty()) continue
 
                 val title = cellValues.getOrNull(0)?.trim() ?: ""
-
-                if (title.isBlank()) {
-                    continue
-                }
+                if (title.isBlank()) continue
 
                 val description = if (cellValues.size > 1) {
                     cellValues.subList(1, cellValues.size).joinToString(" | ")
-                } else {
-                    null
-                }
+                } else null
 
                 tasks.add(Task(title = title, description = description))
             }
@@ -596,7 +493,7 @@ class BaseActivity : AppCompatActivity() {
         } catch (e: InvalidExcelFormatException) {
             throw e
         } catch (e: Exception) {
-            throw InvalidExcelFormatException("Error parsing Excel file: ${e.message}")
+            throw InvalidExcelFormatException("Parse error: ${e.message}")
         }
 
         return tasks
@@ -604,15 +501,8 @@ class BaseActivity : AppCompatActivity() {
 
     private fun isHeaderRow(row: Row): Boolean {
         val firstCell = row.getCell(0)
-        val firstCellValue = getCellValueAsString(firstCell).trim().lowercase()
-
-        val isHeader = firstCellValue in listOf("title", "name", "task", "item", "subject", "description", "desc")
-
-        if (isHeader) {
-            Log.d(TAG, "Detected header row with value: $firstCellValue")
-        }
-
-        return isHeader
+        val value = getCellValueAsString(firstCell).trim().lowercase()
+        return value in listOf("title", "name", "task", "item", "subject", "description", "desc")
     }
 
     private fun getCellValueAsString(cell: Cell?): String {
@@ -653,6 +543,6 @@ class BaseActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         _binding = null
-        Log.d(TAG, "BaseActivity destroyed")
+        Log.d(TAG, "Destroyed")
     }
 }
