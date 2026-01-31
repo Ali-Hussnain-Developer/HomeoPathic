@@ -124,9 +124,11 @@ class TaskListFragment : Fragment() {
                             it.title.contains(searchText, ignoreCase = true)
                         }.sortedBy { it.title.lowercase() }
                         taskAdapter.submitList(filteredList)
+                        Log.d("TAG", "Filtered list applied with ${filteredList.size} items")
                     } else {
                         val sortedTasks = fullTaskList.sortedBy { it.title.lowercase() }
                         taskAdapter.submitList(sortedTasks)
+                        Log.d("TAG", "list applied with ${sortedTasks.size} items")
                     }
 
                     if (fullTaskList.isEmpty()) {

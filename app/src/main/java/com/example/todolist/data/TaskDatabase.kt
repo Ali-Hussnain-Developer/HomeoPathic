@@ -24,9 +24,62 @@ abstract class TaskDatabase : RoomDatabase() {
                     context.applicationContext,
                     TaskDatabase::class.java,
                     "task_db"
-                )
+                ).addCallback(object : RoomDatabase.Callback() {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        super.onCreate(db)
+                        // Prepopulate database on first creation
+                        CoroutineScope(Dispatchers.IO).launch {
+                            prepopulateDatabase(context.applicationContext)
+                        }
+                    }
+                })
                     .build().also { instance = it }
             }
         }
+
+        private suspend fun prepopulateDatabase(context: Context) {
+            try {
+                val dao = getDatabase(context).taskDao()
+
+                // Check if database is already populated
+                if (dao.getTaskCount() > 0) {
+                    return
+                }
+
+                // Read JSON file from assets folder
+                val inputStream = context.assets.open("medical_data.json")
+                val reader = InputStreamReader(inputStream)
+
+                // Parse JSON using Gson
+                val gson = Gson()
+                val taskType = object : TypeToken<List<TaskJson>>() {}.type
+                val taskJsonList: List<TaskJson> = gson.fromJson(reader, taskType)
+
+                // Convert to Task objects
+                val tasks = taskJsonList.map { taskJson ->
+                    Task(
+                        title = taskJson.title,
+                        description = taskJson.description
+                    )
+                }
+
+                reader.close()
+                inputStream.close()
+
+                // Insert all tasks into database
+                if (tasks.isNotEmpty()) {
+                    dao.insertAll(tasks)
+                }
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // Helper data class for JSON parsing
+        private data class TaskJson(
+            val title: String,
+            val description: String
+        )
     }
 }
